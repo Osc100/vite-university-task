@@ -8,7 +8,7 @@ import {
   X,
   AlertTriangle,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import {
   deleteDoc,
   doc,
@@ -16,8 +16,9 @@ import {
   collection,
   updateDoc,
 } from "firebase/firestore";
-import { db } from "@/lib/firebase"; // Adjust import path as needed
+import { db } from "@/lib/firebase";
 import { toast } from "sonner";
+import { SearchBar } from "@/components/search-bar";
 
 interface Category {
   id: string;
@@ -30,8 +31,11 @@ export const Route = createFileRoute("/categories")({
 });
 
 function CategoryPage() {
-  const { data: categories, refetch } =
-    useFirestoreCollection<Category>("categories");
+  const { data: categories, reload: refetch } =
+    useFirestoreCollection<Category>("categories", {
+      pageSize: 1000,
+    });
+
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
@@ -39,12 +43,32 @@ function CategoryPage() {
     id: string;
     name: string;
   } | null>(null);
+
   const [currentCategory, setCurrentCategory] = useState({
     id: "",
     name: "",
     description: "",
   });
+
   const [isLoading, setIsLoading] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+
+  // Filter categories based on search query
+  const filteredCategories = useMemo(() => {
+    if (!searchQuery.trim()) return categories;
+
+    const query = searchQuery.toLowerCase();
+    return categories.filter(
+      (category) =>
+        category.name.toLowerCase().includes(query) ||
+        category.description.toLowerCase().includes(query) ||
+        category.id.toLowerCase().includes(query),
+    );
+  }, [categories, searchQuery]);
+
+  const handleSearch = (query: string) => {
+    setSearchQuery(query);
+  };
 
   const handleAddCategory = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -149,22 +173,43 @@ function CategoryPage() {
   return (
     <div className="min-h-screen bg-gray-50 p-6 sm:p-10">
       {/* Header Section */}
-      <header className="mb-8 flex items-center justify-between">
-        <div className="flex items-center space-x-3">
-          <Tag className="h-8 w-8 text-indigo-600" />
-          <h1 className="text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl">
-            Product Categories
-          </h1>
+      <header className="mb-8">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div className="flex items-center space-x-3">
+            <Tag className="h-8 w-8 text-indigo-600" />
+            <h1 className="text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl">
+              Product Categories
+            </h1>
+          </div>
+          <div className="flex flex-col sm:flex-row gap-4 sm:items-center">
+            <SearchBar
+              onSearch={handleSearch}
+              placeholder="Search categories by name, description, or ID..."
+            />
+            <button
+              className="flex items-center justify-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-md hover:bg-indigo-700 transition duration-150 ease-in-out whitespace-nowrap"
+              type="button"
+              onClick={handleAddClick}
+            >
+              <PlusCircle className="mr-2 h-5 w-5" />
+              Add New Category
+            </button>
+          </div>
         </div>
-        <button
-          className="flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-md hover:bg-indigo-700 transition duration-150 ease-in-out"
-          type="button"
-          onClick={handleAddClick}
-        >
-          <PlusCircle className="mr-2 h-5 w-5" />
-          Add New Category
-        </button>
       </header>
+
+      {/* Results Count */}
+      {searchQuery && (
+        <div className="mb-4 text-sm text-gray-600">
+          Showing {filteredCategories.length} of {categories.length} categories
+          {searchQuery && (
+            <span>
+              {" "}
+              for "<span className="font-medium">{searchQuery}</span>"
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Category Grid/Table View */}
       <div className="bg-white shadow-lg rounded-xl overflow-hidden">
@@ -176,13 +221,15 @@ function CategoryPage() {
           <div className="text-right">Actions</div>
         </div>
 
-        {/* Table Body - Map over categories */}
-        {categories.length === 0 ? (
+        {/* Table Body - Map over filtered categories */}
+        {filteredCategories.length === 0 ? (
           <div className="p-6 text-center text-gray-500">
-            No categories found.
+            {searchQuery
+              ? "No categories found matching your search."
+              : "No categories found."}
           </div>
         ) : (
-          categories.map((cat) => (
+          filteredCategories.map((cat) => (
             <div
               key={`cat-${cat.id}`}
               className="border-b border-gray-100 p-4 hover:bg-indigo-50 transition duration-100 ease-in-out last:border-b-0 md:grid md:grid-cols-[1fr_2fr_3fr_1fr] md:gap-4 md:items-center"

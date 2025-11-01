@@ -40,9 +40,9 @@ if (rootElement && !rootElement.innerHTML) {
     <StrictMode>
       <TanStackQueryProvider.Provider {...TanStackQueryProviderContext}>
         <RouterProvider router={router} />
-      </TanStackQueryProvider.Provider>
 
-      <Toaster />
+        <Toaster />
+      </TanStackQueryProvider.Provider>
     </StrictMode>,
   );
 }

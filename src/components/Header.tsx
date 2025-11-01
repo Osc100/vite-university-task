@@ -6,7 +6,9 @@ export default function Header() {
       <nav className="flex flex-row gap-4 w-full">
         <div className="px-2 font-bold flex flex-row gap-4">
           <Link to="/">Home</Link>
+          <Link to="/catalog">Catalog</Link>
           <Link to="/categories">Categories</Link>
+          <Link to="/products">Products</Link>
         </div>
       </nav>
     </header>
