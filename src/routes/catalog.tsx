@@ -3,7 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 // --- NUEVO: Iconos para los botones de paginación ---
 import { ShoppingBag, ChevronLeft, ChevronRight } from "lucide-react";
 import { useState, useMemo, useEffect } from "react";
-import { formatPrice } from "./products";
+import { formatPrice } from "@/lib/export";
 
 // --- Required Interfaces (copied from products page) ---
 // (Sin cambios)

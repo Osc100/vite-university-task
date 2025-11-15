@@ -7,9 +7,10 @@ import {
   Trash2,
   X,
   AlertTriangle,
-  ImagePlus, // Added for image upload
+  ImagePlus,
+  FileDown, // Added for export buttons
 } from "lucide-react";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   deleteDoc,
   doc,
@@ -21,30 +22,14 @@ import { db } from "@/lib/firebase";
 import { toast } from "sonner";
 import { SearchBar } from "@/components/search-bar";
 
-// Interface for the "connection"
-interface Category {
-  id: string;
-  name: string;
-  description: string;
-}
-
-// Product interface updated with imageBase64
-interface Product {
-  id: string;
-  name: string;
-  description: string;
-  price: number;
-  categoryId: string; // The connection
-  imageBase64?: string; // New field for the image
-}
-
-// Helper to format price
-export const formatPrice = (price: number) => {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-  }).format(price || 0);
-};
+import {
+  type Product,
+  type Category,
+  formatPrice,
+  exportToXLSX,
+  ProductPDF,
+} from "@/lib/export";
+import { PDFDownloadLink } from "@react-pdf/renderer";
 
 // New route path
 export const Route = createFileRoute("/products")({
@@ -78,7 +63,7 @@ function ProductPage() {
     description: "",
     price: 0,
     categoryId: "",
-    imageBase64: "", // New field
+    imageBase64: "",
   };
   const [currentProduct, setCurrentProduct] = useState<
     Omit<Product, "id"> & { id: string }
@@ -87,6 +72,15 @@ function ProductPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
 
+  // New state to ensure PDFDownloader only renders on client
+  const [isClient, setIsClient] = useState(false);
+
+  // --- Effects ---
+  // Ensure PDFLink is only rendered client-side to avoid SSR issues
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
+
   // --- Memos & Filters ---
   const categoryMap = useMemo(() => {
     if (!categories) return new Map<string, string>();
@@ -94,6 +88,7 @@ function ProductPage() {
   }, [categories]);
 
   const filteredProducts = useMemo(() => {
+    if (!products) return []; // Ensure products is not null/undefined
     if (!searchQuery.trim()) return products;
 
     const query = searchQuery.toLowerCase();
@@ -114,17 +109,24 @@ function ProductPage() {
     setSearchQuery(query);
   };
 
-  // New: Handler for image file selection
+  // --- Updated: XLSX Export Handler ---
+  const handleExportXLSX = () => {
+    if (!filteredProducts || filteredProducts.length === 0) {
+      toast.error("No products to export");
+      return;
+    }
+    // Call the utility function
+    exportToXLSX(filteredProducts, categoryMap, "products_export");
+  };
+
+  // Handler for image file selection
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // --- Firestore Document Size Limit Check ---
-    // Firestore documents have a 1 MiB limit. Base64 encoding adds ~33% overhead.
-    // Setting a ~1MB limit on the original file is safest.
     if (file.size > 1024 * 1024) {
       toast.error("Image is too large. Please use an image under 1MB.");
-      e.target.value = ""; // Reset the input
+      e.target.value = "";
       return;
     }
 
@@ -142,7 +144,7 @@ function ProductPage() {
     reader.readAsDataURL(file);
   };
 
-  // New: Handler to remove the image from state
+  // Handler to remove the image from state
   const removeImage = () => {
     setCurrentProduct((prev) => ({ ...prev, imageBase64: "" }));
   };
@@ -158,7 +160,7 @@ function ProductPage() {
         description: currentProduct.description.trim(),
         price: Number(currentProduct.price) || 0,
         categoryId: currentProduct.categoryId,
-        imageBase64: currentProduct.imageBase64 || "", // Save image
+        imageBase64: currentProduct.imageBase64 || "",
         createdAt: new Date(),
       });
       resetForm();
@@ -188,7 +190,7 @@ function ProductPage() {
         description: currentProduct.description.trim(),
         price: Number(currentProduct.price) || 0,
         categoryId: currentProduct.categoryId,
-        imageBase64: currentProduct.imageBase64 || "", // Update image
+        imageBase64: currentProduct.imageBase64 || "",
         updatedAt: new Date(),
       });
       resetForm();
@@ -229,7 +231,6 @@ function ProductPage() {
   };
 
   const handleEditClick = (product: Product) => {
-    // Ensure imageBase64 is an empty string if it's null/undefined
     setCurrentProduct({ ...product, imageBase64: product.imageBase64 || "" });
     setIsEditMode(true);
     setIsModalOpen(true);
@@ -251,6 +252,8 @@ function ProductPage() {
     resetForm();
   };
 
+  const hasProductsToExport = filteredProducts && filteredProducts.length > 0;
+
   return (
     <div className="min-h-screen bg-gray-50 p-6 sm:p-10">
       {/* Header Section */}
@@ -267,6 +270,56 @@ function ProductPage() {
               onSearch={handleSearch}
               placeholder="Search products by name, category, or description..."
             />
+
+            {/* --- EXPORT BUTTONS --- */}
+            <button
+              className="flex items-center justify-center rounded-md bg-green-600 px-4 py-2 text-sm font-semibold text-white shadow-md hover:bg-green-700 transition duration-150 ease-in-out whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
+              type="button"
+              onClick={handleExportXLSX}
+              disabled={!hasProductsToExport}
+              title={
+                !hasProductsToExport
+                  ? "No products to export"
+                  : "Export as XLSX"
+              }
+            >
+              <FileDown className="mr-2 h-5 w-5" />
+              Export XLSX
+            </button>
+
+            {/* PDF Export (Client-side only) */}
+            {isClient && (
+              <PDFDownloadLink
+                document={
+                  <ProductPDF
+                    products={filteredProducts}
+                    categoryMap={categoryMap}
+                  />
+                }
+                fileName="products_report.pdf"
+              >
+                {({ loading }) => (
+                  <button
+                    className={`flex items-center justify-center rounded-md px-4 py-2 text-sm font-semibold text-white shadow-md transition duration-150 ease-in-out whitespace-nowrap ${loading || !hasProductsToExport
+                        ? "bg-red-400 cursor-not-allowed opacity-70"
+                        : "bg-red-600 hover:bg-red-700"
+                      }`}
+                    type="button"
+                    disabled={loading || !hasProductsToExport}
+                    title={
+                      !hasProductsToExport
+                        ? "No products to export"
+                        : "Export as PDF"
+                    }
+                  >
+                    <FileDown className="mr-2 h-5 w-5" />
+                    {loading ? "Building PDF..." : "Export PDF"}
+                  </button>
+                )}
+              </PDFDownloadLink>
+            )}
+            {/* --- END EXPORT BUTTONS --- */}
+
             <button
               className="flex items-center justify-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-md hover:bg-indigo-700 transition duration-150 ease-in-out whitespace-nowrap"
               type="button"
@@ -294,7 +347,7 @@ function ProductPage() {
 
       {/* Product Grid/Table View */}
       <div className="bg-white shadow-lg rounded-xl overflow-hidden">
-        {/* Table Header - Added 'Image' column */}
+        {/* Table Header */}
         <div className="hidden border-b border-gray-200 bg-gray-50 p-4 font-semibold text-gray-600 md:grid md:grid-cols-[0.5fr_2fr_1.5fr_1fr_3fr_1fr] md:gap-4">
           <div className="truncate">Image</div>
           <div className="truncate">Name</div>
@@ -304,7 +357,7 @@ function ProductPage() {
           <div className="text-right">Actions</div>
         </div>
 
-        {/* Table Body - Map over filtered products */}
+        {/* Table Body */}
         {filteredProducts.length === 0 ? (
           <div className="p-6 text-center text-gray-500">
             {searchQuery
@@ -317,7 +370,7 @@ function ProductPage() {
               key={`prod-${prod.id}`}
               className="border-b border-gray-100 p-4 hover:bg-indigo-50 transition duration-100 ease-in-out last:border-b-0 md:grid md:grid-cols-[0.5fr_2fr_1.5fr_1fr_3fr_1fr] md:gap-4 md:items-center"
             >
-              {/* New: Image Cell */}
+              {/* Image Cell */}
               <div className="flex items-center md:py-0 pb-2 md:pb-0">
                 {prod.imageBase64 ? (
                   <img
@@ -350,7 +403,7 @@ function ProductPage() {
                 )}
               </div>
 
-              {/* Price */}
+              {/* Price (Uses imported formatPrice) */}
               <div className="text-sm font-medium text-gray-900 truncate mb-2 md:mb-0">
                 <span className="md:hidden font-semibold text-gray-500">
                   Price:{" "}
@@ -393,7 +446,6 @@ function ProductPage() {
       {/* Add/Edit Product Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-y-auto">
-          {/* Increased max-w-lg for more space */}
           <div className="bg-white rounded-lg w-full max-w-lg">
             <div className="flex items-center justify-between p-6 border-b">
               <h2 className="text-xl font-semibold text-gray-900">
@@ -410,7 +462,7 @@ function ProductPage() {
 
             <form
               onSubmit={isEditMode ? handleEditProduct : handleAddProduct}
-              className="p-6 space-y-4 max-h-[80vh] overflow-y-auto" // Make form scrollable
+              className="p-6 space-y-4 max-h-[80vh] overflow-y-auto"
             >
               {/* Product Name */}
               <div>
@@ -493,7 +545,7 @@ function ProductPage() {
                 />
               </div>
 
-              {/* New: Image Upload Section */}
+              {/* Image Upload Section */}
               <div>
                 <label
                   htmlFor="image-selector"
@@ -600,7 +652,7 @@ function ProductPage() {
         </div>
       )}
 
-      {/* Delete Confirmation Modal (Unchanged) */}
+      {/* Delete Confirmation Modal */}
       {isDeleteModalOpen && productToDelete && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-lg w-full max-w-md">
